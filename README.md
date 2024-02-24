@@ -28,7 +28,7 @@ conda activate MTL_sharing
 ```
  
 
-# PASCAL-Context# 
+# PASCAL-Context # 
 
 We use the same data (PASCAL-Context) as ATRC and InvPT. You can download the data by:
 
@@ -48,4 +48,12 @@ normals_distill
 pascal-context
 sal_distill
 semseg
+```
+# NYUD-v2 #
+
+Since NYUD-v2 includes data for the temporal domain as well, you can use our pre-processed and downloaded data below to simplify the process:
+
+```
+wget https://data.vision.ee.ethz.ch/brdavid/atrc/PASCALContext.tar.gz
+
 ```
