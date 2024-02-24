@@ -8,27 +8,20 @@ from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable
 import sys
-
-sys.path.append('/nfs/turbo/coe-hunseok/sshoouri/Codes/')
+sys.path.append('./Codes/')
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.nn.functional as F
 import yaml
-
 import utils
-
-
 import utils.data_constants as data_constants
-
 from multimae import multimae
-
 from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
 from multimae.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
                                       SegmenterMaskTransformerAdapter)
 from utils import NativeScalerWithGradNormCount as NativeScaler
-
 from utils import create_model
 from utils.data_constants import COCO_SEMSEG_NUM_CLASSES
 from utils.datasets_semseg import build_semseg_dataset, simple_transform
@@ -37,7 +30,19 @@ from utils.log_images import log_semseg_wandb
 from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
 from utils.pos_embed import interpolate_pos_embed_multimae
 from utils.semseg_metrics import mean_iou
+import pickle
+import shutil
+import tempfile
+import torch.distributed as dist
 
+from utils.pascal_context import PASCALContext
+
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from utils.custom_collate import collate_mil
+import pdb
+import torchvision
+from pascal_utils import transforms
 
 DOMAIN_CONF = {
     'rgb': {
@@ -475,43 +480,26 @@ def compute_metrics_distributed(seg_preds, seg_gts, size, num_classes, device, i
 
 
 args.finetune='/nfs/turbo/coe-hunseok/sshoouri/Codes/base_weight/mae-b_dec512d8b_1600e_multivit-c477195b.pth'
-
 args.input_size=512
-args.data_path='/nfs/turbo/coe-hunseok/sshoouri/Video_nyu_one_time_interval/train'
-args.eval_data_path='/nfs/turbo/coe-hunseok/sshoouri/Video_nyu_one_time_interval/test'
 args.num_classes=21
-args.dataset_name='nyu'
 args.dist_eval=True
 args.seg_reduce_zero_label=True
 args.eval_freq=5
 args.find_unused_params=False
 args.batch_size=4
 args.epochs = 400
-
 args.lr=2e-5
 args.weight_decay=1e-6
 
-
 args.warmup_epochs=1
 args.wandb_project='multimae-finetune-semseg'
-args.output_dir='/nfs/turbo/coe-hunseok/sshoouri/pascal_finetune/main_seg/step1_one_sara'
+args.output_dir='./pascal_finetune/main_seg/step1'
 if os.path.exists(args.output_dir)==False:
           os.mkdir(args.output_dir)
 
 args.dist_on_itp=True
-import os
-
 utils.init_distributed_mode(args)
 device = torch.device(args.device)
-
-import os
-import pickle
-import shutil
-import tempfile
-
-import torch
-import torch.distributed as dist
-
 seed = args.seed + utils.get_rank()
 torch.manual_seed(seed)
 np.random.seed(seed)
@@ -535,15 +523,6 @@ additional_targets={}
 additional_targets = {domain: DOMAIN_CONF[domain]['aug_type'] for domain in args.all_domains}
 num_tasks = utils.get_world_size()
 global_rank = utils.get_rank()
-from utils.pascal_context import PASCALContext
-
-import torch
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from utils.custom_collate import collate_mil
-import pdb
-import torchvision
-from pascal_utils import transforms
 train_transforms = torchvision.transforms.Compose([ # from ATRC
             transforms.RandomScaling(scale_factors=[0.5, 2.0], discrete=False),
             transforms.RandomCrop(size=(512, 512), cat_max_ratio=0.75),
@@ -775,10 +754,6 @@ for epoch in range(args.start_epoch, args.epochs):
             loss_scale_value = loss_scaler.state_dict()["scale"]
 
         torch.cuda.synchronize()
-        
-        
-        
-        
         # Metrics and logging
         metric_logger.update(loss=loss.item())
        
