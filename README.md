@@ -28,3 +28,26 @@ conda activate MTL_sharing
 ```
  
 
+# PASCAL-Context# 
+
+We use the same data (PASCAL-Context) as ATRC and InvPT. You can download the data by:
+
+```
+wget https://data.vision.ee.ethz.ch/brdavid/atrc/NYUDv2.tar.gz
+wget https://data.vision.ee.ethz.ch/brdavid/atrc/PASCALContext.tar.gz
+
+```
+
+Make sure you put the data in the following format:
+
+```
+data
+human_parts
+ImageSets
+JPEGImages
+normals_distill
+pascal-context
+sal_distill
+semseg
+
+```
