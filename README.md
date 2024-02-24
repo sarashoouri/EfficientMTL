@@ -34,7 +34,6 @@ We use the same data (PASCAL-Context) as ATRC and InvPT. You can download the da
 
 ```
 wget https://data.vision.ee.ethz.ch/brdavid/atrc/PASCALContext.tar.gz
-
 ```
 
 Make sure you put the data in the following format:
