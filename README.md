@@ -55,7 +55,6 @@ Since NYUD-v2 includes data for the temporal domain as well, you can use our pre
 
 ```
 wget https://data.vision.ee.ethz.ch/brdavid/atrc/PASCALContext.tar.gz
-
 ```
 
 # Acknowledgement #
@@ -73,7 +72,6 @@ BibTex:
   journal={arXiv preprint arXiv:2303.09663},
   year={2023}
 }
-
 ```
 
 
