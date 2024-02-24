@@ -48,5 +48,4 @@ normals_distill
 pascal-context
 sal_distill
 semseg
-
 ```
