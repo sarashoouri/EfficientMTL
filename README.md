@@ -28,7 +28,7 @@ conda activate MTL_sharing
 ```
  
 
-# PASCAL-Context # 
+## PASCAL-Context ##
 
 We use the same data (PASCAL-Context) as ATRC and InvPT. You can download the data by:
 
@@ -49,7 +49,7 @@ pascal-context
 sal_distill
 semseg
 ```
-# NYUD-v2 #
+## NYUD-v2 ##
 
 Since NYUD-v2 includes data for the temporal domain as well, you can use our pre-processed and downloaded data below to simplify the process:
 
@@ -57,3 +57,23 @@ Since NYUD-v2 includes data for the temporal domain as well, you can use our pre
 wget https://data.vision.ee.ethz.ch/brdavid/atrc/PASCALContext.tar.gz
 
 ```
+
+# Acknowledgement #
+
+This repository borrows partial codes from [MTI-Net](https://github.com/SimonVandenhende/Multi-Task-Learning-PyTorch), [ATRC](https://github.com/brdav/atrc), [InvPT](https://github.com/prismformore/Multi-Task-Transformer/tree/3b70fcc5a4f7053a7e32a9f85da5dda670c18fba?tab=readme-ov-file), and [MultiMAE](https://github.com/EPFL-VILAB/MultiMAE/tree/main). Many thanks to them!
+
+# Cite #
+
+BibTex:
+
+```
+@article{shoouri2023efficient,
+  title={Efficient Computation Sharing for Multi-Task Visual Scene Understanding},
+  author={Shoouri, Sara and Yang, Mingyu and Fan, Zichen and Kim, Hun-Seok},
+  journal={arXiv preprint arXiv:2303.09663},
+  year={2023}
+}
+
+```
+
+
