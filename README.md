@@ -23,6 +23,8 @@ conda env create -f environment.yml
 
 Then activate the environment with:
 
+```
 conda activate MTL_sharing
+```
  
 
