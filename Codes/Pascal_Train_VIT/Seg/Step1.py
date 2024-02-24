@@ -479,7 +479,7 @@ def compute_metrics_distributed(seg_preds, seg_gts, size, num_classes, device, i
     return ret
 
 
-args.finetune='/nfs/turbo/coe-hunseok/sshoouri/Codes/base_weight/mae-b_dec512d8b_1600e_multivit-c477195b.pth'
+args.finetune='./Codes/base_weight/mae-b_dec512d8b_1600e_multivit-c477195b.pth'
 args.input_size=512
 args.num_classes=21
 args.dist_eval=True
