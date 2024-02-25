@@ -28,7 +28,7 @@ conda activate MTL_sharing
 ```
  
 
-## PASCAL-Context ##
+## Data: PASCAL-Context ##
 
 We use the same data (PASCAL-Context) as ATRC and InvPT. You can download the data by:
 
@@ -48,13 +48,31 @@ pascal-context
 sal_distill
 semseg
 ```
-## NYUD-v2 ##
+## Data: NYUD-v2 ##
 
 Since NYUD-v2 includes data for the temporal domain as well, you can use our pre-processed and downloaded data below to simplify the process:
 
 ```
 wget https://drive.google.com/file/d/1At8mZKyj4odze0xAFOq3Bteus0LcwoF6/view?usp=sharing
 ```
+## Running Scripts ##
+ All the codes are in ``` ./Codes/ ```
+
+As mentioned in the paper, each task has three steps for training the models. However, since we chose "Segmentation" as the base task, it contains a smaller number of steps. We explain the details of training strategies below:
+
+```
+PASCAL-Context:
+Main task: Segmentation
+Steps: Step1 to train the whole model without any activation and weight sharing
+Code: ./Codes/Pascal_Train_VIT/Seg/Step1.py
+
+Sub-task: All other sub-task
+Steps:
+1. Step1 is to train the model based on the **main task** to make the delta weight sparse.
+2. Step2 fixes the locations of non-zero values in the **delta weight** matrix and finetunes them to improve the sub-task performance.
+3. Step3 finetunes the nonzero values of the delta weight matrix in order to make the **delta task activation** sparse while maintaining the desired performance.
+```
+ 
 
 # Acknowledgement #
 
