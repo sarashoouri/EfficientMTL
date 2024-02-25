@@ -67,9 +67,16 @@ Code: ./Codes/Pascal_Train_VIT/Seg/Step1.py
 
 Sub-task: All other sub-task
 Steps:
-1. Step1 is to train the model based on the <strong>main task</strong> to make the delta weight sparse.
-2. Step2 fixes the locations of non-zero values in the <strong>delta weight</strong> matrix and finetunes them to improve the sub-task performance.
-3. Step3 finetunes the nonzero values of the delta weight matrix in order to make the <strong>delta task activation</strong> sparse while maintaining the desired performance.
+1. Step1 is to train the model based on the "main task" to make the delta weight sparse.
+2. Step2 fixes the locations of non-zero values in the "delta weight" matrix and finetunes them to improve the sub-task performance.
+3. Step3 finetunes the nonzero values of the delta weight matrix in order to make the "delta task activation" sparse while maintaining the desired performance.
+
+Example:
+Sub-task: Human Parsing
+Steps:
+1. ./Codes/Pascal_Train_VIT/human_parts/Step1.py
+2. ./Codes/Pascal_Train_VIT/human_parts/Step2.py
+3. ./Codes/Pascal_Train_VIT/human_parts/Step3.py
 ```
  
 
