@@ -53,7 +53,7 @@ semseg
 Since NYUD-v2 includes data for the temporal domain as well, you can use our pre-processed and downloaded data below to simplify the process:
 
 ```
-wget https://data.vision.ee.ethz.ch/brdavid/atrc/PASCALContext.tar.gz
+wget https://drive.google.com/file/d/1At8mZKyj4odze0xAFOq3Bteus0LcwoF6/view?usp=sharing
 ```
 
 # Acknowledgement #
