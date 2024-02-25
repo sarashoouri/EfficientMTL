@@ -2,52 +2,51 @@ import argparse
 import datetime
 import json
 import os
+import sys
 import time
 import warnings
 from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable
-import sys
-
-#
-sys.path.append('/nfs/turbo/coe-hunseok/sshoouri/Codes/')
-#sys.path.append('/home/sshoouri/MultiMAE/')
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.nn.functional as F
 import yaml
-
-import utils
-import utils.data_constants as data_constants
+import cv2
+import glob
+import math
+import pickle
+import shutil
+import tempfile
+import torchvision
+import pdb
+from torch.utils.data import DataLoader
+from torch.nn import Module
+from torch.nn.functional import F
 from multimae import multimae
 from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
-from multimae.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
-                                      SegmenterMaskTransformerAdapter)
+from multimae.output_adapters import ConvNeXtAdapter, DPTOutputAdapter, SegmenterMaskTransformerAdapter
 from utils import NativeScalerWithGradNormCount as NativeScaler
 from utils import create_model
-from utils.data_constants import COCO_SEMSEG_NUM_CLASSES
+from utils.data_constants import COCO_SEMSEG_NUM_CLASSES, NYU_MEAN, NYU_STD
 from utils.datasets_semseg import build_semseg_dataset, simple_transform 
+from utils.dataset_regression import build_regression_dataset, build_regression_dataset_normal
 from utils.dist import collect_results_cpu
 from utils.log_images import log_semseg_wandb
 from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
 from utils.pos_embed import interpolate_pos_embed_multimae
 from utils.semseg_metrics import mean_iou
-
-from utils.data_constants import NYU_MEAN, NYU_STD
-
-from utils.dataset_regression import build_regression_dataset, build_regression_dataset_normal
-
-
-import warnings
-import cv2
-import os.path
-import numpy as np
-import glob
+from utils.pascal_context import PASCALContext
+from utils.custom_collate import collate_mil
+from pascal_utils import transforms
+from utils.mypath import db_paths, PROJECT_ROOT_DIR
 import math
-import torch
-import json
+from typing import Callable, Iterable, Tuple
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
+
 DOMAIN_CONF = {
     'rgb': {
         'channels': 3,
@@ -78,10 +77,7 @@ DOMAIN_CONF = {
 }
 
 def get_args():
-    
-   
-   
-
+  
     parser = argparse.ArgumentParser('MultiMAE depth fine-tuning script', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int, help='Batch size per GPU')
     parser.add_argument('--epochs', default=900, type=int)
@@ -242,47 +238,29 @@ def get_args():
 
 sys.argv = ['--config-file','my_config']
 args = get_args().parse_args("")
-
-
 args.input_size=512
-args.data_path='/nfs/turbo/coe-hunseok/sshoouri/Video_nyu_one_time_interval/train'
-args.eval_data_path='/nfs/turbo/coe-hunseok/sshoouri/Video_nyu_one_time_interval/test'
 args.num_classes=21
-args.dataset_name='nyu'
 args.dist_eval=True
 args.seg_reduce_zero_label=True
 args.eval_freq=5
 args.find_unused_params=False
 args.batch_size=6
-
 args.lr=2e-5
 args.weight_decay=1e-6
-
-
 args.warmup_epochs=1
 args.wandb_project='multimae-finetune-semseg'
-args.output_dir='/nfs/turbo/coe-hunseok/sshoouri/pascal_finetune/sal/step2_sara_m_two'
+args.output_dir='./pascal_finetune/sal/step2'
 
 
 if os.path.exists(args.output_dir)==False:
      os.mkdir(args.output_dir)
     
 args.dist_on_itp=True
-
 utils.init_distributed_mode(args)
 device = torch.device(args.device)
-import os
-import pickle
-import shutil
-import tempfile
-
-import torch
-import torch.distributed as dist
-
 seed = args.seed + utils.get_rank()
 torch.manual_seed(seed)
 np.random.seed(seed)
-
 cudnn.benchmark = True
 #args.in_domains = args.in_domains.split('-')
 #args.in_domains = ['rgb' ,'rgb_one_after' ,'rgb_one_before']
@@ -314,14 +292,6 @@ for task in args.decoder_main_tasks:
 additional_targets = {domain: DOMAIN_CONF[domain]['aug_type'] for domain in args.all_domains}
 num_tasks = utils.get_world_size()
 global_rank = utils.get_rank()
-
-from utils.pascal_context import PASCALContext
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from utils.custom_collate import collate_mil
-import pdb
-import torchvision
-from pascal_utils import transforms
 train_transforms = torchvision.transforms.Compose([ # from ATRC
             transforms.RandomScaling(scale_factors=[0.5, 2.0], discrete=False),
             transforms.RandomCrop(size=(512, 512), cat_max_ratio=0.75),
@@ -338,7 +308,6 @@ valid_transforms = torchvision.transforms.Compose([
             transforms.AddIgnoreRegions(),
             transforms.ToTensor(),])
 
-from utils.mypath import db_paths, PROJECT_ROOT_DIR
 train_dataset = PASCALContext(db_paths['PASCALContext'], download=False, split=['train'], transform=train_transforms, retname=True,
                                           do_semseg=False,
                                           do_edge=False,
@@ -407,16 +376,8 @@ model = create_model(
         output_adapters=output_adapters,
         drop_path_rate=args.drop_path_encoder,
 )
-
 model.to(device)
 model.zero_grad()
-import math
-from typing import Callable, Iterable, Tuple
-
-import torch
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
-
 class PolynomialLR(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, max_iterations, gamma=0.9, min_lr=0., last_epoch=-1):
         self.max_iterations = max_iterations
@@ -429,9 +390,6 @@ class PolynomialLR(torch.optim.lr_scheduler._LRScheduler):
         factor = (1 - self.last_epoch /
                   float(self.max_iterations)) ** self.gamma
         return [(base_lr - self.min_lr) * factor + self.min_lr for base_lr in self.base_lrs]
-
-
-
 def get_linear_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, last_epoch=-1):
     """
     Create a schedule with a learning rate that decreases linearly from the initial lr set in the optimizer to 0, after
@@ -472,12 +430,6 @@ def concrete_stretched(alpha, l=0., r = 1.):
     ds_dalpha = (s*(1-s)).detach()
     dz_dalpha = dz_dt*dt_du*du_ds*ds_dalpha
     return z.detach(), dz_dalpha.detach()
-
-
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.modules.module import Module
-import numpy as np
 model_without_ddp = model
 n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -485,12 +437,6 @@ print("Model = %s" % str(model_without_ddp))
 print('number of params: {} M'.format(n_parameters / 1e6))
 
 return_all_layers = args.output_adapter in ['dpt']
-from torch.nn.modules.module import Module
-
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.modules.module import Module
-import numpy as np
 model_without_ddp = model
 n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -498,9 +444,6 @@ print("Model = %s" % str(model_without_ddp))
 print('number of params: {} M'.format(n_parameters / 1e6))
 
 return_all_layers = args.output_adapter in ['dpt']
-from torch.nn.modules.module import Module
-import numpy as np
-
 class CrossEntropyLoss(nn.Module):
     """
     Cross entropy loss with ignore regions.
@@ -547,37 +490,22 @@ tasks_loss_fn = {
             'sal': CrossEntropyLoss(balanced=True, ignore_index=255) 
 }
 
-import torch.nn.functional as F
-from torch.nn.modules.module import Module
-import numpy as np
-
-import torch
-import json
-from torch import optim as optim
-
 args.alpha_init=5
 
 depth_params = {}
 finetune_params = []
 alpha_params = []
-
 parameter_group_names = {}
 parameter_group_vars = {}
 skip_weight_decay_list = model.no_weight_decay()
-
 total_batch_size = args.batch_size * utils.get_world_size()
 num_training_steps_per_epoch = len(trainloader) // total_batch_size
-
-
 model_without_ddp = model
 n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("Model = %s" % str(model_without_ddp))
 print('number of params: {} M'.format(n_parameters / 1e6))
-
 num_layers = model_without_ddp.get_num_layers()
-
 no_lr_scale_list = []
-
 assigner = LayerDecayValueAssigner(list(args.layer_decay ** (num_layers + 1 - i) for i in range(num_layers + 2)))
 
 def get_num_layer_for_vit(var_name, num_max_layer=14):
@@ -613,7 +541,7 @@ get_num_layer=assigner.get_layer_id if assigner is not None else None
 get_layer_scale=assigner.get_scale if assigner is not None else None
 
 
-saved=torch.load('/nfs/turbo/coe-hunseok/sshoouri/pascal_finetune/sal/step1_sara_m_one/checkpoint-last-info.pt',map_location=model.device)
+saved=torch.load('./pascal_finetune/sal/step1/checkpoint-last-info.pt',map_location=model.device)
 nonzero_mask = {}
 model_keys = model.state_dict().keys()
 n_and_p = list(model.named_parameters())
@@ -726,14 +654,6 @@ print("Use step level LR & WD scheduler!")
 
 scheduler=PolynomialLR(optimizer, 120000, gamma=0.9, min_lr=0)
 #args.adam_epsilon=1e-8
-#alpha_optimizer = optim.AdamW(alpha_params, lr = 0.1, eps=args.adam_epsilon)
-
-#args.warmup_steps=args.warmup_epoch*len(data_loader_train)
-#scheduler2 = get_linear_schedule_with_warmup(
-#        alpha_optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total
-#)
-
-
 class SaliencyMeter(object):
     def __init__(self, ignore_index=255, threshold_step=None, beta_squared=1):
         self.ignore_index = ignore_index
@@ -821,10 +741,7 @@ def evaluate(model, tasks_loss_fn, data_loader, device, epoch, in_domains,
     gt_images = None
     performance_meter=SaliencyMeter(ignore_index=255, threshold_step=0.05, beta_squared=0.3)
     for x in metric_logger.log_every(data_loader, print_freq, header):
-       
 
-        
-        
         tasks_dict = {
             task: tensor.to(device, non_blocking=True)
             for task, tensor in x.items() 
@@ -836,9 +753,6 @@ def evaluate(model, tasks_loss_fn, data_loader, device, epoch, in_domains,
             for task, tensor in tasks_dict.items()
             if task in 'image'
         }
-
-        
-        
 
         # Mask invalid input values
         for task in input_dict:
@@ -855,9 +769,6 @@ def evaluate(model, tasks_loss_fn, data_loader, device, epoch, in_domains,
                 for task in preds
             }
             loss = sum(task_losses.values())
-                
-        
-
         loss_value = loss.item()
         task_loss_values = {f'{task}_loss': l.item() for task, l in task_losses.items()}
         #metrics = normal_metrics(preds['normal'], tasks_dict['normals'], mask_valid=None)
@@ -917,21 +828,13 @@ else:
     
 start_time = time.time()
 min_val_loss = np.inf
-
 args.eval_freq=4
 args.distributed=False
-
 args.concrete_lower=-1.5
 args.concrete_upper=1.5
-
-
 args.per_layer_alpha=0
 args.max_grad_norm=10
 max_norm=args.clip_grad
-
-import numpy as np
-from tqdm import tqdm, trange
-
 args.gradient_accumulation_steps =1
 args.save_ckp=2
 
@@ -979,9 +882,7 @@ for n in nonzero_mask:
   
   
     weight_layer[ind]+=torch.sum(nonzero_mask[n]).item()
-
-    
-    
+  
 print('sparsity ratio in whole model: {} M'.format((1-non_zero_weight/whole_weight)*100))     
 
 for n, p in model.named_parameters():
