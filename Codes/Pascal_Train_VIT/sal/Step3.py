@@ -2,52 +2,51 @@ import argparse
 import datetime
 import json
 import os
+import sys
 import time
 import warnings
 from functools import partial
 from pathlib import Path
 from typing import Dict, Iterable
-import sys
-
-#
-sys.path.append('/nfs/turbo/coe-hunseok/sshoouri/Codes/')
-#sys.path.append('/home/sshoouri/MultiMAE/')
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.nn.functional as F
 import yaml
-
-import utils
-import utils.data_constants as data_constants
+import cv2
+import glob
+import math
+import pickle
+import shutil
+import tempfile
+import torchvision
+import pdb
+from torch.utils.data import DataLoader
+from torch.nn import Module
+from torch.nn.functional import F
 from multimae import multimae
 from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
-from multimae.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
-                                      SegmenterMaskTransformerAdapter)
+from multimae.output_adapters import ConvNeXtAdapter, DPTOutputAdapter, SegmenterMaskTransformerAdapter
 from utils import NativeScalerWithGradNormCount as NativeScaler
 from utils import create_model
-from utils.data_constants import COCO_SEMSEG_NUM_CLASSES
+from utils.data_constants import COCO_SEMSEG_NUM_CLASSES, NYU_MEAN, NYU_STD
 from utils.datasets_semseg import build_semseg_dataset, simple_transform 
+from utils.dataset_regression import build_regression_dataset, build_regression_dataset_normal
 from utils.dist import collect_results_cpu
 from utils.log_images import log_semseg_wandb
 from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
 from utils.pos_embed import interpolate_pos_embed_multimae
 from utils.semseg_metrics import mean_iou
-
-from utils.data_constants import NYU_MEAN, NYU_STD
-
-from utils.dataset_regression import build_regression_dataset, build_regression_dataset_normal
-
-
-import warnings
-import cv2
-import os.path
-import numpy as np
-import glob
+from utils.pascal_context import PASCALContext
+from utils.custom_collate import collate_mil
+from pascal_utils import transforms
+from utils.mypath import db_paths, PROJECT_ROOT_DIR
 import math
-import torch
-import json
+from typing import Callable, Iterable, Tuple
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LambdaLR
+
 DOMAIN_CONF = {
     'rgb': {
         'channels': 3,
@@ -79,9 +78,6 @@ DOMAIN_CONF = {
 
 def get_args():
     
-   
-   
-
     parser = argparse.ArgumentParser('MultiMAE depth fine-tuning script', add_help=False)
     parser.add_argument('--batch_size', default=64, type=int, help='Batch size per GPU')
     parser.add_argument('--epochs', default=250, type=int)
@@ -244,39 +240,23 @@ sys.argv = ['--config-file','my_config']
 args = get_args().parse_args("")
 
 args.input_size=512
-args.data_path='/nfs/turbo/coe-hunseok/sshoouri/Video_nyu_one_time_interval/train'
-args.eval_data_path='/nfs/turbo/coe-hunseok/sshoouri/Video_nyu_one_time_interval/test'
 args.num_classes=21
-args.dataset_name='nyu'
 args.dist_eval=True
 args.seg_reduce_zero_label=True
 args.eval_freq=5
 args.find_unused_params=False
 args.batch_size=6
-
 args.lr=1e-5/2
 args.weight_decay=1e-6
-
-
 args.warmup_epochs=1
 args.wandb_project='multimae-finetune-semseg'
-args.output_dir='/nfs/turbo/coe-hunseok/sshoouri/pascal_finetune/sal/step3_sara_m_three'
+args.output_dir='./pascal_finetune/sal/step3'
 if os.path.exists(args.output_dir)==False:
      os.mkdir(args.output_dir)
-        
-        
+             
 args.dist_on_itp=True
-
 utils.init_distributed_mode(args)
 device = torch.device(args.device)
-import os
-import pickle
-import shutil
-import tempfile
-
-import torch
-import torch.distributed as dist
-
 seed = args.seed + utils.get_rank()
 torch.manual_seed(seed)
 np.random.seed(seed)
@@ -311,14 +291,6 @@ for task in args.decoder_main_tasks:
 additional_targets = {domain: DOMAIN_CONF[domain]['aug_type'] for domain in args.all_domains}
 num_tasks = utils.get_world_size()
 global_rank = utils.get_rank()
-
-from utils.pascal_context import PASCALContext
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from utils.custom_collate import collate_mil
-import pdb
-import torchvision
-from pascal_utils import transforms
 train_transforms = torchvision.transforms.Compose([ # from ATRC
             transforms.RandomScaling(scale_factors=[0.5, 2.0], discrete=False),
             transforms.RandomCrop(size=(512, 512), cat_max_ratio=0.75),
@@ -335,7 +307,6 @@ valid_transforms = torchvision.transforms.Compose([
             transforms.AddIgnoreRegions(),
             transforms.ToTensor(),])
 
-from utils.mypath import db_paths, PROJECT_ROOT_DIR
 train_dataset = PASCALContext(db_paths['PASCALContext'], download=False, split=['train'], transform=train_transforms, retname=True,
                                           do_semseg=False,
                                           do_edge=False,
@@ -406,15 +377,6 @@ model = create_model(
 )
 
 model.zero_grad()
-import math
-from typing import Callable, Iterable, Tuple
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import LambdaLR
-
 class PolynomialLR(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, max_iterations, gamma=0.9, min_lr=0., last_epoch=-1):
         self.max_iterations = max_iterations
@@ -472,10 +434,6 @@ def concrete_stretched(alpha, l=0., r = 1.):
     return z.detach(), dz_dalpha.detach()
 
 
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.modules.module import Module
-import numpy as np
 model_without_ddp = model
 n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -483,9 +441,6 @@ print("Model = %s" % str(model_without_ddp))
 print('number of params: {} M'.format(n_parameters / 1e6))
 
 return_all_layers = args.output_adapter in ['dpt']
-from torch.nn.modules.module import Module
-import numpy as np
-
 class CrossEntropyLoss(nn.Module):
     """
     Cross entropy loss with ignore regions.
@@ -619,10 +574,7 @@ def evaluate(model, tasks_loss_fn, data_loader, device, epoch, in_domains,
     gt_images = None
     performance_meter=SaliencyMeter(ignore_index=255, threshold_step=0.05, beta_squared=0.3)
     for x in metric_logger.log_every(data_loader, print_freq, header):
-       
 
-        
-        
         tasks_dict = {
             task: tensor.to(device, non_blocking=True)
             for task, tensor in x.items() 
@@ -634,10 +586,6 @@ def evaluate(model, tasks_loss_fn, data_loader, device, epoch, in_domains,
             for task, tensor in tasks_dict.items()
             if task in 'image'
         }
-
-        
-        
-
         # Mask invalid input values
         for task in input_dict:
             if task in ['rgb']:
@@ -654,8 +602,6 @@ def evaluate(model, tasks_loss_fn, data_loader, device, epoch, in_domains,
             }
             loss = sum(task_losses.values())
                 
-        
-
         loss_value = loss.item()
         task_loss_values = {f'{task}_loss': l.item() for task, l in task_losses.items()}
         #metrics = normal_metrics(preds['normal'], tasks_dict['normals'], mask_valid=None)
@@ -727,7 +673,7 @@ interpolate_pos_embed_multimae(model_depth_main, checkpoint_model)
 msg = model_depth_main.load_state_dict(checkpoint_model, strict=False)
 print(msg)
 
-saved = torch.load('/nfs/turbo/coe-hunseok/sshoouri/pascal_finetune/sal/step2_sara_m_two/checkpoint-last-info.pt', map_location='cpu')
+saved = torch.load('./pascal_finetune/sal/step2/checkpoint-last-info.pt', map_location='cpu')
 checkpoint_normal={}
 for n in saved["model"]:
     m=n.replace("module.", "")
@@ -751,23 +697,16 @@ print("total=", total, "nonzero=", nonzero)
 model_depth_main.to(device)
 model.to(device)
 model.zero_grad()
-import torch
-import json
-from torch import optim as optim
 args.alpha_init=5
 
 depth_params = {}
 finetune_params = []
 alpha_params = []
-
 parameter_group_names = {}
 parameter_group_vars = {}
 skip_weight_decay_list = model.no_weight_decay()
-
 total_batch_size = args.batch_size * utils.get_world_size()
 num_training_steps_per_epoch = len(trainloader) // total_batch_size
-
-
 model_without_ddp = model
 n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("Model = %s" % str(model_without_ddp))
@@ -853,7 +792,6 @@ for name,param in model.named_parameters():
         depth_params[name1]= [p0, p1, alpha]
         finetune_params.append(depth_params[name1][1])
         alpha_params.append(depth_params[name1][2])
-
         
         if len(param.shape) == 1 or name.endswith(".bias") or name in skip_weight_decay_list:
             group_name = "no_decay"
@@ -993,8 +931,6 @@ args.per_layer_alpha=0
 args.max_grad_norm=60
 max_norm=args.clip_grad
 total_layers=13
-import numpy as np
-from tqdm import tqdm, trange
 args.fix_layer=-1
 args.gradient_accumulation_steps =1
 args.save_ckp=2000000
@@ -1142,9 +1078,7 @@ for epoch in range(args.start_epoch, args.epochs):
                         depth_params[n][1].grad.copy_(p.grad.data)
                     else:
                         depth_params[n][1].grad.copy_(p.grad.data * grad_params[n][1].data)
-                    
-        
-        
+
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
            
         torch.nn.utils.clip_grad_norm_(alpha_params, args.max_grad_norm)
@@ -1163,14 +1097,11 @@ for epoch in range(args.start_epoch, args.epochs):
         
         if (step + 1)% 100 == 0:
                      print("empirical prob:", nonzero_params/params_norm[4])
-
-        
        
         metric_logger.update(loss=loss_value)
         metric_logger.update(loss_task=loss_task.item())
         metric_logger.update(**task_loss_values)
-        
-       
+
         min_lr = 10.
         max_lr = 0.
         for group in optimizer.param_groups:
