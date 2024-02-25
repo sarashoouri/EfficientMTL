@@ -1,28 +1,22 @@
 import argparse
-import datetime
-import json
-import os
-import time
-import warnings
-from functools import partial
-from pathlib import Path
-from typing import Dict, Iterable
 import sys
-
-sys.path.append('/home/sshoouri/MultiMAE/')
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.distributed as dist
-import torch.nn.functional as F
 import yaml
 
+from functools import partial
+from pathlib import Path
+from typing import Dict, Iterable
+
+# Import from local modules
+sys.path.append('./Codes/')
 import utils
 import utils.data_constants as data_constants
 from multimae import multimae
 from multimae.input_adapters import PatchedInputAdapter, SemSegInputAdapter
-from multimae.output_adapters import (ConvNeXtAdapter, DPTOutputAdapter,
-                                      SegmenterMaskTransformerAdapter)
+from multimae.output_adapters import ConvNeXtAdapter, DPTOutputAdapter, SegmenterMaskTransformerAdapter
 from utils import NativeScalerWithGradNormCount as NativeScaler
 from utils import create_model
 from utils.data_constants import COCO_SEMSEG_NUM_CLASSES
@@ -32,6 +26,14 @@ from utils.log_images import log_semseg_wandb
 from utils.optim_factory import LayerDecayValueAssigner, create_optimizer
 from utils.pos_embed import interpolate_pos_embed_multimae
 from utils.semseg_metrics import mean_iou
+
+# Additional imports
+import os
+import pickle
+import shutil
+import tempfile
+import copy
+
 
 
 DOMAIN_CONF = {
@@ -464,17 +466,12 @@ def compute_metrics_distributed(seg_preds, seg_gts, size, num_classes, device, i
     return ret
 
 
-#train the main task without any constraint for 
 
-#args.finetune='/home/sshoouri/MultiMAE/base_weight/mae-b_dec512d8b_1600e_multivit-c477195b.pth'
-
-args.finetune='/home/sshoouri/MultiMAE/finetune/semseg_decoder_small/nyu/Seg_main_task_step1_multimae_base_small_dim_3072_2/checkpoint-best2.pth'
-
-#args.finetune='/home/sshoouri/MultiMAE/base_weight/multimae-b_98_rgb+-depth-semseg_1600e_multivit-afff3f8c.pth'
+args.finetune='./Codes/base_weight/mae-b_dec512d8b_1600e_multivit-c477195b.pth'
 
 args.input_size=416
-args.data_path='/scratch/hunseok_root/hunseok1/sshoouri/Video_nyu_one_time_interval/train'
-args.eval_data_path='/scratch/hunseok_root/hunseok1/sshoouri/Video_nyu_one_time_interval/test'
+args.data_path='./Video_nyu_one_time_interval/train'
+args.eval_data_path='./Video_nyu_one_time_interval/test'
 args.num_classes=40
 args.dataset_name='nyu'
 args.dist_eval=True
@@ -482,15 +479,11 @@ args.seg_reduce_zero_label=True
 args.eval_freq=5
 args.find_unused_params=False
 args.batch_size=50
-
 args.lr=0.00001*(args.batch_size/256)
-
 args.weight_decay=0.000001
-
-
 args.warmup_epochs=40
 args.wandb_project='multimae-finetune-semseg'
-args.output_dir='/home/sshoouri/MultiMAE/finetune/semseg_decoder_small/nyu/Seg_main_task_step1_multimae_base_small_dim_3072_2'
+args.output_dir='./nyu/seg/Step1/'
 if os.path.exists(args.output_dir)==False:
      os.mkdir(args.output_dir)
     
@@ -508,16 +501,6 @@ dist_url = "tcp://%s:%s" % (os.environ['MASTER_ADDR'], os.environ['MASTER_PORT']
 
 torch.distributed.init_process_group(backend=dist_backend, init_method=dist_url,
                                          world_size=world_size, rank=local_rank)
-
-
-
-import os
-import pickle
-import shutil
-import tempfile
-
-import torch
-import torch.distributed as dist
 
 
 def setup_for_distributed(is_master):
@@ -543,7 +526,7 @@ np.random.seed(seed)
     # random.seed(seed)
     
     
-    
+  
 seed = args.seed + utils.get_rank()
 torch.manual_seed(seed)
 np.random.seed(seed)
@@ -799,9 +782,6 @@ for epoch in range(args.start_epoch, args.epochs):
             if task in args.in_domains
         }
         
-        
-        
-       
          
         if 'pseudo_semseg' in tasks_dict and 'semseg' in args.in_domains:
             psemseg  = tasks_dict['pseudo_semseg']
@@ -814,17 +794,7 @@ for epoch in range(args.start_epoch, args.epochs):
             seg_pred, seg_gt = preds['semseg'], tasks_dict['semseg']
             loss = criterion(seg_pred, seg_gt)
         loss_value = loss.item()
-        
-        
-
-
-        
-               
-                    
-                    
-        
-                
-                
+          
         optimizer.zero_grad()
         # this attribute is added by timm on one optimizer (adahessian)
         is_second_order = hasattr(optimizer, 'is_second_order') and optimizer.is_second_order
@@ -835,12 +805,7 @@ for epoch in range(args.start_epoch, args.epochs):
 
         torch.cuda.synchronize()
         
-        
-        
-        
         # Metrics and logging
-        
-        
         metric_logger.update(loss=loss.item())
        
         if args.fp16:
