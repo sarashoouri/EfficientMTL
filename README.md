@@ -59,7 +59,6 @@ wget https://drive.google.com/file/d/1At8mZKyj4odze0xAFOq3Bteus0LcwoF6/view?usp=
  All the codes are in ``` ./Codes/ ```
 
 As mentioned in the paper, each task has three steps for training the models. However, since we chose "Segmentation" as the base task, it contains a smaller number of steps. We explain the details of training strategies below:
-
 ```
 PASCAL-Context:
 Main task: Segmentation
@@ -68,9 +67,9 @@ Code: ./Codes/Pascal_Train_VIT/Seg/Step1.py
 
 Sub-task: All other sub-task
 Steps:
-1. Step1 is to train the model based on the **main task** to make the delta weight sparse.
-2. Step2 fixes the locations of non-zero values in the **delta weight** matrix and finetunes them to improve the sub-task performance.
-3. Step3 finetunes the nonzero values of the delta weight matrix in order to make the **delta task activation** sparse while maintaining the desired performance.
+1. Step1 is to train the model based on the <strong>main task</strong> to make the delta weight sparse.
+2. Step2 fixes the locations of non-zero values in the <strong>delta weight</strong> matrix and finetunes them to improve the sub-task performance.
+3. Step3 finetunes the nonzero values of the delta weight matrix in order to make the <strong>delta task activation</strong> sparse while maintaining the desired performance.
 ```
  
 
