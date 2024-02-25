@@ -531,9 +531,6 @@ for name,param in model.named_parameters():
         finetune_params.append(depth_params[name1][1])
         alpha_params.append(depth_params[name1][2])
         
-        
-        
-        
         if len(param.shape) == 1 or name.endswith(".bias") or name in skip_weight_decay_list:
             group_name = "no_decay"
             this_weight_decay = 0.
