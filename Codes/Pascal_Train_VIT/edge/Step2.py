@@ -45,7 +45,7 @@ from utils.mypath import db_paths, PROJECT_ROOT_DIR
 import math
 from typing import Callable, Iterable, Tuple
 from torch.optim import Optimizer
-from torch.optim.
+from torch.optim.lr_scheduler import LambdaLR
 class BalancedBinaryCrossEntropyLoss(nn.Module):
     """
     Balanced binary cross entropy loss with ignore regions.
