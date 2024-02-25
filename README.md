@@ -78,7 +78,24 @@ Steps:
 2. ./Codes/Pascal_Train_VIT/human_parts/Step2.py
 3. ./Codes/Pascal_Train_VIT/human_parts/Step3.py
 ```
- 
+
+Since NYUD contains the temporal domain as well, it is a little bit different in terms of training strategies.
+
+ ```
+NYUD-v2:
+Main task: Segmentation
+Steps:
+1. Step1 to train the whole model without any activation and weight sharing
+Code: ./Codes/NYU/Seg/Step1.py
+2. Step2 is to finetune the weights of Step1's model to make the "delta temporal activation" sparse for the main task.
+
+Sub-task: All other sub-task
+Steps:
+1. Step1 is to train the model based on the "main task" to make the delta weight sparse.
+2. Step2 fixes the locations of non-zero values in the "delta weight" matrix and finetunes them to improve the sub-task performance.
+3. Step3 finetunes the nonzero values of the delta weight matrix in order to make both "delta task activation" and "delta temporal activation" sparse while maintaining the desired performance.
+```
+
 
 # Acknowledgement #
 
